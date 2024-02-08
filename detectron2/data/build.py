@@ -300,9 +300,9 @@ def build_batch_data_loader(
     num_workers=0,
     collate_fn=None,
     drop_last: bool = True,
-    prefetch_factor=None,
-    persistent_workers=False,
-    pin_memory=False,
+    single_gpu_batch_size=None,
+    seed=None,
+    **kwargs,
 ):
     """
     Build a batched dataloader. The main differences from `torch.utils.data.DataLoader` are:
@@ -315,24 +315,43 @@ def build_batch_data_loader(
             Must be provided iff. ``dataset`` is a map-style dataset.
         total_batch_size, aspect_ratio_grouping, num_workers, collate_fn: see
             :func:`build_detection_train_loader`.
+        single_gpu_batch_size: You can specify either `single_gpu_batch_size` or `total_batch_size`.
+            `single_gpu_batch_size` specifies the batch size that will be used for each gpu/process.
+            `total_batch_size` allows you to specify the total aggregate batch size across gpus.
+            It is an error to supply a value for both.
         drop_last (bool): if ``True``, the dataloader will drop incomplete batches.
 
     Returns:
         iterable[list]. Length of each list is the batch size of the current
             GPU. Each element in the list comes from the dataset.
     """
-    world_size = get_world_size()
-    assert (
-        total_batch_size > 0 and total_batch_size % world_size == 0
-    ), "Total batch size ({}) must be divisible by the number of gpus ({}).".format(
-        total_batch_size, world_size
-    )
-    batch_size = total_batch_size // world_size
+    if single_gpu_batch_size:
+        if total_batch_size:
+            raise ValueError(
+                """total_batch_size and single_gpu_batch_size are mutually incompatible.
+                Please specify only one. """
+            )
+        batch_size = single_gpu_batch_size
+    else:
+        world_size = get_world_size()
+        assert (
+            total_batch_size > 0 and total_batch_size % world_size == 0
+        ), "Total batch size ({}) must be divisible by the number of gpus ({}).".format(
+            total_batch_size, world_size
+        )
+        batch_size = total_batch_size // world_size
+    logger = logging.getLogger(__name__)
+    logger.info("Making batched data loader with batch_size=%d", batch_size)
 
     if isinstance(dataset, torchdata.IterableDataset):
         assert sampler is None, "sampler must be None if dataset is IterableDataset"
     else:
         dataset = ToIterableDataset(dataset, sampler, shard_chunk_size=batch_size)
+
+    generator = None
+    if seed is not None:
+        generator = torch.Generator()
+        generator.manual_seed(seed)
 
     if aspect_ratio_grouping:
         assert drop_last, "Aspect ratio grouping will drop incomplete batches."
@@ -341,9 +360,8 @@ def build_batch_data_loader(
             num_workers=num_workers,
             collate_fn=operator.itemgetter(0),  # don't batch, but yield individual elements
             worker_init_fn=worker_init_reset_seed,
-            prefetch_factor=prefetch_factor,
-            persistent_workers=persistent_workers,
-            pin_memory=pin_memory,
+            generator=generator,
+            **kwargs
         )  # yield individual mapped dict
         data_loader = AspectRatioGroupedDataset(data_loader, batch_size)
         if collate_fn is None:
@@ -357,9 +375,8 @@ def build_batch_data_loader(
             num_workers=num_workers,
             collate_fn=trivial_batch_collator if collate_fn is None else collate_fn,
             worker_init_fn=worker_init_reset_seed,
-            prefetch_factor=prefetch_factor,
-            persistent_workers=persistent_workers,
-            pin_memory=pin_memory,
+            generator=generator,
+            **kwargs
         )
 
 
@@ -499,9 +516,7 @@ def build_detection_train_loader(
     aspect_ratio_grouping=True,
     num_workers=0,
     collate_fn=None,
-    prefetch_factor=None,
-    persistent_workers=False,
-    pin_memory=False,
+    **kwargs
 ):
     """
     Build a dataloader for object detection with some default features.
@@ -553,9 +568,7 @@ def build_detection_train_loader(
         aspect_ratio_grouping=aspect_ratio_grouping,
         num_workers=num_workers,
         collate_fn=collate_fn,
-        prefetch_factor=prefetch_factor,
-        persistent_workers=persistent_workers,
-        pin_memory=pin_memory,
+        **kwargs
     )
 
 
