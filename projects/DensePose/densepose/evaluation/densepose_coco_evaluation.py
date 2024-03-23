@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 # This is a modified version of cocoeval.py where we also have the densepose evaluation.
 
+# pyre-unsafe
+
 __author__ = "tsungyi"
 
 import copy
@@ -16,6 +18,7 @@ import time
 from collections import defaultdict
 from enum import Enum
 from typing import Any, Dict, Tuple
+# pyre-fixme[21]: Could not find module `scipy.spatial.distance`.
 import scipy.spatial.distance as ssd
 import torch
 import torch.nn.functional as F
