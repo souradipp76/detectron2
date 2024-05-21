@@ -18,7 +18,6 @@ import time
 from collections import defaultdict
 from enum import Enum
 from typing import Any, Dict, Tuple
-# pyre-fixme[21]: Could not find module `scipy.spatial.distance`.
 import scipy.spatial.distance as ssd
 import torch
 import torch.nn.functional as F
@@ -196,7 +195,7 @@ class DensePoseCocoEval:
                 # dataset. This is not a correct segmentation annotation
                 # in terms of COCO format; we need to deal with it somehow
                 segm = ann["segmentation"]
-                if type(segm) == list and len(segm) == 0:
+                if type(segm) is list and len(segm) == 0:
                     ann["segmentation"] = None
                     continue
                 rle = coco.annToRLE(ann)
